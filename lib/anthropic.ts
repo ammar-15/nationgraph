@@ -54,6 +54,13 @@ export type SubmitTool = {
 /** Stop offering web tools past this prompt size, leaving room to finish the turn. */
 const PROMPT_TOKEN_BUDGET = 600_000;
 
+/** Models that reject a forced `tool_choice`, learned from the first 400 and cached. */
+const noForcedToolChoice = new Set<string>();
+
+function isForcedToolChoiceRejected(e: unknown) {
+  return e instanceof Anthropic.BadRequestError && /tool_choice/i.test(String((e as Error).message));
+}
+
 /** Rough prompt size. Search and fetch results are JSON text, so ~3.5 chars per token. */
 function estimateTokens(system: string, messages: Anthropic.Messages.MessageParam[]) {
   return Math.ceil((system.length + JSON.stringify(messages).length) / 3.5);
@@ -86,9 +93,9 @@ function webTools(opts: RunOpts, searchLeft: number, fetchLeft: number) {
 /**
  * Runs an agent turn with Claude's server-side web tools, continuing through
  * `pause_turn`. When `submit` is given, the model returns its result by calling
- * that tool, so the output needs no JSON parsing. The choice is left to the
- * model: some models reject a forced `tool_choice`, and the prompts ask for the
- * call explicitly. `runStructured` falls back to parsing the text if it skips it.
+ * that tool, so the output needs no JSON parsing. The call is forced when there is
+ * nothing to research; on models that reject a forced `tool_choice` the prompts ask
+ * for it instead, and `runStructured` parses the text if the model skips the call.
  */
 export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise<{ data?: unknown; text: string }> {
   const client = researchClient();
@@ -105,13 +112,29 @@ export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise
     if (opts.submit) {
       tools.push({ name: opts.submit.name, description: opts.submit.description, input_schema: opts.submit.schema });
     }
-    const res = await client.messages.create({
-      model: opts.model || SCOUT_MODEL,
-      max_tokens: opts.maxTokens || 12000,
-      system: opts.system,
-      messages,
-      ...(tools.length ? { tools: tools as Anthropic.Messages.ToolUnion[] } : {}),
-    });
+    const model = opts.model || SCOUT_MODEL;
+    // With the submit tool alone there is nothing to research, so require the call rather
+    // than hope for it. Models that reject a forced choice fall back to picking it freely;
+    // the prompts ask for the call and `runStructured` can still parse it out of the text.
+    const force = Boolean(opts.submit) && tools.length === 1 && !noForcedToolChoice.has(model);
+    const send = (forced: boolean) =>
+      client.messages.create({
+        model,
+        max_tokens: opts.maxTokens || 12000,
+        system: opts.system,
+        messages,
+        ...(tools.length ? { tools: tools as Anthropic.Messages.ToolUnion[] } : {}),
+        ...(forced ? { tool_choice: { type: "tool" as const, name: opts.submit!.name } } : {}),
+      });
+
+    let res;
+    try {
+      res = await send(force);
+    } catch (e) {
+      if (!force || !isForcedToolChoiceRejected(e)) throw e;
+      noForcedToolChoice.add(model);
+      res = await send(false);
+    }
     text += textOf(res.content);
     const call = res.content.find(
       (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use" && b.name === opts.submit?.name,
