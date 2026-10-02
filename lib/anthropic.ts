@@ -77,7 +77,9 @@ function webTools(opts: RunOpts) {
 /**
  * Runs an agent turn with Claude's server-side web tools, continuing through
  * `pause_turn`. When `submit` is given, the model returns its result by calling
- * that tool, so the output is always valid JSON (no hand-written JSON to break).
+ * that tool, so the output needs no JSON parsing. The choice is left to the
+ * model: some models reject a forced `tool_choice`, and the prompts ask for the
+ * call explicitly. `runStructured` falls back to parsing the text if it skips it.
  */
 export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise<{ data?: unknown; text: string }> {
   const client = researchClient();
@@ -85,10 +87,6 @@ export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise
   if (opts.submit) {
     tools.push({ name: opts.submit.name, description: opts.submit.description, input_schema: opts.submit.schema });
   }
-  // With no web tools we can force the submit tool; with web tools the model must search first.
-  const toolChoice =
-    opts.submit && tools.length === 1 ? { type: "tool" as const, name: opts.submit.name } : undefined;
-
   const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: opts.prompt }];
   let text = "";
   for (let i = 0; i < 5; i++) {
@@ -98,7 +96,6 @@ export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise
       system: opts.system,
       messages,
       ...(tools.length ? { tools: tools as Anthropic.Messages.ToolUnion[] } : {}),
-      ...(toolChoice ? { tool_choice: toolChoice } : {}),
     });
     text += textOf(res.content);
     const call = res.content.find(
