@@ -39,7 +39,9 @@ type LegistarMatter = {
   MatterLastModifiedUtc?: string;
 };
 
-const CONTRACT_WORDS = /(contract|agreement|purchase|procure|rfp|request for proposal|bid|award|renew|extension|amendment|license|vendor|services)/i;
+/** Pre-solicitation language: renewals, studies, pilots, funding. Titles that are bids or awards are skipped. */
+const PRE_RFP_WORDS = /(renew|extension|amendment|expir|feasib|study|pilot|needs assessment|assessment|replace|upgrade|modernization|budget|appropriat|grant|funding|plan|authoriz\w* (staff|the (city|county)) to|issue an rfp|issuance of an rfp)/i;
+const ALREADY_OUT = /(award(ing)? (of )?(a )?(contract|bid)|bid (no|number|#)|invitation (for|to) bid|sealed bid|notice of award|rfp\s*(no\.?|number|#))/i;
 
 async function fetchClient(c: (typeof LEGISTAR_CLIENTS)[number], keywords: string[], sinceIso: string) {
   const filter = encodeURIComponent(`MatterLastModifiedUtc ge datetime'${sinceIso}'`);
@@ -55,7 +57,7 @@ async function fetchClient(c: (typeof LEGISTAR_CLIENTS)[number], keywords: strin
     return rows
       .filter((m) => {
         const text = `${m.MatterTitle ?? ""} ${m.MatterName ?? ""}`.toLowerCase();
-        return CONTRACT_WORDS.test(text) && kw.some((k) => text.includes(k));
+        return PRE_RFP_WORDS.test(text) && !ALREADY_OUT.test(text) && kw.some((k) => text.includes(k));
       })
       .slice(0, 8)
       .map<GovRecord>((m) => ({

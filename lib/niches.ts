@@ -16,9 +16,9 @@ export const NICHES: Niche[] = [
       "companies selling software, curriculum, devices, safety, transportation or student services to K-12 districts",
     keywords: ["school", "district", "student", "education", "curriculum", "chromebook", "learning", "classroom", "k-12"],
     searchHints: [
-      "school district RFP curriculum software 2026",
+      "school board agenda approves study of curriculum software replacement",
       "school board approves contract renewal edtech",
-      "school district request for proposals student information system",
+      "school board discusses replacing student information system budget",
       "district technology plan expiring contract",
     ],
   },
@@ -30,8 +30,8 @@ export const NICHES: Niche[] = [
     keywords: ["police", "sheriff", "fire", "911", "dispatch", "body camera", "public safety", "emergency"],
     searchHints: [
       "city council body camera contract expiring",
-      "police department RFP records management system 2026",
-      "fire department CAD replacement request for proposals",
+      "police department records management system aging replacement budget request city council",
+      "fire department CAD system end of life city council funding discussion",
     ],
   },
   {
@@ -41,7 +41,7 @@ export const NICHES: Niche[] = [
     vendorsDescription: "companies selling fleet telematics, fare collection, scheduling and transit software",
     keywords: ["transit", "bus", "fleet", "fare", "paratransit", "vehicle", "transportation"],
     searchHints: [
-      "transit agency RFP fare collection 2026",
+      "transit agency board fare collection system replacement funding approved",
       "city fleet telematics contract renewal council",
     ],
   },
@@ -53,8 +53,8 @@ export const NICHES: Niche[] = [
     keywords: ["software", "license", "erp", "permitting", "cybersecurity", "utility billing", "technology", "subscription"],
     searchHints: [
       "city council approves software contract renewal 2026",
-      "county RFP permitting software",
-      "city request for proposals cybersecurity services",
+      "county commissioners permitting software replacement budget workshop",
+      "city council cybersecurity incident response funding discussion",
     ],
   },
 ];

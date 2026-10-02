@@ -6,8 +6,7 @@ import type { Assets, Contact, LandingPayload, Report, Signal, Vendor } from "@/
 
 const SIGNAL_LABEL: Record<string, string> = {
   expiring_contract: "Expiring contract",
-  upcoming_rfp: "Upcoming RFP",
-  open_rfp: "Open RFP",
+  upcoming_rfp: "RFP being planned",
   budget_approved: "Budget approved",
   board_discussion: "Board discussion",
   no_vendor_in_place: "No vendor in place",
@@ -91,7 +90,7 @@ function SignalCard({ s }: { s: Signal }) {
       </div>
       <div className="row">
         <a className="btn ghost sm" href={s.sourceUrl} target="_blank" rel="noreferrer">
-          {s.signalType === "open_rfp" || s.signalType === "upcoming_rfp" ? "Open RFP" : "Open source"} ↗
+          Open source ↗
         </a>
         <span className="meta">{s.sourceName || s.sourceUrl.replace(/^https?:\/\//, "").split("/")[0]}</span>
       </div>
@@ -502,7 +501,7 @@ export default function Home() {
                           {building === key ? "Building campaign…" : "Build campaign"}
                         </button>
                         <a className="btn ghost sm" href={s.sourceUrl} target="_blank" rel="noreferrer">
-                          {s.signalType === "open_rfp" || s.signalType === "upcoming_rfp" ? "Open RFP" : "Open source"} ↗
+                          Open source ↗
                         </a>
                         <a className="btn ghost sm" href={v.website} target="_blank" rel="noreferrer">Vendor site ↗</a>
                         <SourceBadge ok={s.sourceVerified} />

@@ -56,7 +56,7 @@ const SUBMIT_SIGNALS: SubmitTool = {
             estimatedValue: str("Dollar value if public"),
             timeline: str("Deadline, renewal date or next meeting"),
             sourceName: str("Publisher or portal name"),
-            sourceUrl: str("Direct URL to the RFP, minutes, article or post"),
+            sourceUrl: str("Direct URL to the minutes, agenda, budget document, article or post. Never a solicitation or bid page"),
             evidence: str("Short paraphrase of the key line"),
             confidence: num("0 to 1"),
             contacts: { type: "array", items: CONTACT_JSON },
@@ -137,6 +137,12 @@ const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/
 const isExcluded = (name: string) =>
   [...EXISTING_CUSTOMERS, ...COMPETITORS].some((x) => norm(name) === norm(x) || norm(name).startsWith(norm(x)));
 
+/** Bid boards and solicitation pages mean the RFP is already out, so the signal is not pre-RFP. */
+const SOLICITATION_HOSTS = /(bidnetdirect|demandstar|bonfirehub|bonfire\.|periscopeholdings|publicpurchase|merx\.com|opengov\.com\/procurement|procurement\.opengov|govspend|bidprime|bidsync|ionwave|findrfp|rfpmart|highergov|govwin|sam\.gov|caleprocure|ebidexchange|questcdn|planetbids|jaggaer|ariba\.com)/i;
+const SOLICITATION_TEXT = /(request for (proposals?|qualifications?|quotes?|bids?)\W+(is|are)\s+(now\s+)?(open|due|released|issued|available)|proposals? (are )?due|bids? (are )?due|submission deadline|pre-?bid (meeting|conference)|invitation (for|to) bid|solicitation (number|#)|rfp\s*(no\.?|number|#)\s*[\w-]+)/i;
+const isPublishedSolicitation = (s: Signal) =>
+  SOLICITATION_HOSTS.test(s.sourceUrl) || SOLICITATION_TEXT.test(`${s.title} ${s.summary} ${s.timeline ?? ""} ${s.evidence ?? ""}`);
+
 const CONTACT_SHAPE = `{"name": string|null, "role": string, "organization": string|null, "publicEmail": string|null, "publicPhone": string|null, "linkedinUrl": string|null, "sourceUrl": string}`;
 
 function signalsPrompt(niche: Niche, region: string, records: GovRecord[]) {
@@ -145,7 +151,12 @@ function signalsPrompt(niche: Niche, region: string, records: GovRecord[]) {
         .map((r) => `- [${r.city}, ${r.state}] ${r.date ?? ""} ${r.type ?? ""} ${r.status ?? ""} | ${r.title} | ${r.url}`)
         .join("\n")
     : "(none returned today)";
-  return `Today is ${new Date().toISOString().slice(0, 10)}. Find SLED buying signals for this niche.
+  return `Today is ${new Date().toISOString().slice(0, 10)}. Find PRE-RFP SLED buying signals for this niche.
+
+PRE-RFP ONLY. The value is seeing a deal 3 to 18 months before any solicitation exists, while the agency is still deciding what to buy and the vendor can still shape it.
+- Do NOT return published or open RFPs, RFQs, IFBs, bids or solicitations, and do NOT cite pages on procurement portals or bid boards (BidNet, DemandStar, Bonfire, OpenGov Procurement, Periscope, PublicPurchase, MERX, state eProcurement or "bids and RFPs" pages). By then the deal is mostly decided.
+- A signal is good when the agency has only discussed, funded, studied or planned something, or a contract is nearing its end, and no solicitation has been published yet.
+- If you cannot tell whether a solicitation is already out, leave the signal out.
 
 Niche: ${niche.label}
 Buyers: ${niche.buyers}
@@ -153,24 +164,23 @@ Region focus: ${region || "United States"}
 
 Look for these signal types:
 - expiring_contract: an existing vendor contract ending or up for renewal within ~18 months
-- upcoming_rfp: an RFP/RFQ/bid announced or planned but not yet open
-- open_rfp: a solicitation currently accepting responses
+- upcoming_rfp: an RFP is being planned (board says staff will draft or issue one, or a procurement forecast lists it) but nothing is published yet
 - budget_approved: board/council approved budget or funding for this category
 - board_discussion: board or council discussed a need, pilot, or feasibility study
 - no_vendor_in_place: the agency states a need and has no current solution or vendor
 - call_for_contractors: a blog post, news story or LinkedIn/X post asking vendors or contractors to respond
 - grant_awarded: grant funding awarded that must be spent on this category
 
-Where to look: procurement portals (BidNet Direct, DemandStar, Bonfire, OpenGov Procurement, state eProcurement sites), board documents (BoardDocs, Legistar, Granicus, Simbli), district/city news pages and blogs, local news, and public LinkedIn/X posts from agencies.
+Where to look: board and council agendas and minutes (BoardDocs, Legistar, Granicus, Simbli), budget books and budget workshops, capital improvement plans, bond measures, strategic and technology plans, consent-agenda contract renewals, grant award announcements, district/city news pages and blogs, local news, and public LinkedIn/X posts from agencies.
 Search ideas: ${niche.searchHints.join(" | ")}
 
 City council records pulled from the Legistar API today (use any that fit, cite their URL):
 ${recs}
 
-Return 6 to 10 of the strongest, most specific signals. sourceUrl must be the most direct link (the RFP page, minutes PDF, article or post), not a portal homepage. Use web_fetch to confirm details on the most promising pages.
+Return 6 to 10 of the strongest, most specific signals. sourceUrl must be the most direct link (the minutes or agenda PDF, budget document, article or post), never a solicitation page or portal homepage. Use web_fetch to confirm details on the most promising pages.
 
 When finished, call submit_signals with this shape:
-{"signals": [{"id": "s1", "agency": string, "agencyType": string|null, "state": string|null, "signalType": one of the types above, "title": string, "summary": string (2-3 sentences, what happened), "painPoint": string (the problem the agency is trying to solve), "estimatedValue": string|null, "timeline": string|null (deadline, renewal date or next meeting), "sourceName": string|null, "sourceUrl": string, "evidence": string|null (short paraphrase of the key line, under 30 words), "confidence": number 0-1, "contacts": [${CONTACT_SHAPE}] (0-3 decision-makers at the agency)}]}`;
+{"signals": [{"id": "s1", "agency": string, "agencyType": string|null, "state": string|null, "signalType": one of the types above, "title": string, "summary": string (2-3 sentences, what happened), "painPoint": string (the problem the agency is trying to solve), "estimatedValue": string|null, "timeline": string|null (renewal date, budget vote or next meeting, never a bid deadline), "sourceName": string|null, "sourceUrl": string, "evidence": string|null (short paraphrase of the key line, under 30 words), "confidence": number 0-1, "contacts": [${CONTACT_SHAPE}] (0-3 decision-makers at the agency)}]}`;
 }
 
 function vendorsPrompt(niche: Niche, region: string) {
@@ -286,6 +296,9 @@ export async function runScout(niche: Niche, region: string, progress: Progress 
   if (sigRes.status === "fulfilled") {
     try {
       signals = parseList(sigRes.value, "signals", SignalSchema, warnings);
+      const before = signals.length;
+      signals = signals.filter((x) => !isPublishedSolicitation(x));
+      if (signals.length < before) warnings.push(`Removed ${before - signals.length} signal(s) that were already published RFPs, so only pre-RFP signals remain.`);
     } catch (e) {
       warnings.push(`Could not parse signals: ${(e as Error).message}`);
     }

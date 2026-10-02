@@ -2,14 +2,14 @@
 
 A growth prototype for NationGraph: find the deal before the RFP, then hand it to the vendor who can win it.
 
-**The motion:** an agent scans public SLED sources for buying signals, finds vendors who sell into them (NationGraph's potential customers), matches the two, and builds the campaign to convert the vendor: ads, a personalized landing page with an email CTA, and outreach drafts for both sides. Offer: **1 hand-researched lead + 5 free signals.**
+**The motion:** an agent scans public SLED sources for buying signals, finds vendors who sell into them (NationGraph's potential customers), matches the two, and builds the campaign to convert the vendor: ads, a personalized landing page with an email CTA, and outreach drafts for both sides. Offer: **1 hand-researched pre-RFP lead + 10 free pre-RFP opportunities.**
 
 ## What it does
 
 | Step | How |
 |---|---|
 | **Gov data** | Legistar Web API: recent contract-related city council items across several cities |
-| **Signal agent** | Claude + web search + web fetch: expiring contracts, upcoming/open RFPs, approved budgets, board discussions, agencies with no vendor in place, blogs and social posts calling for contractors |
+| **Signal agent** | Claude + web search + web fetch: expiring contracts, RFPs still being planned, approved budgets, board discussions, agencies with no vendor in place, blogs and social posts calling for contractors |
 | **Vendor agent** | Claude + web tools: growth-stage companies selling into the niche, their public gov customers, GTM pain points and sales leaders |
 | **Verify** | Every source URL is fetched server-side; unreachable sources are flagged |
 | **Match** | Claude Haiku scores vendor ↔ agency fit |

@@ -50,7 +50,6 @@ export type Contact = z.infer<typeof ContactSchema>;
 export const SIGNAL_TYPES = [
   "expiring_contract",
   "upcoming_rfp",
-  "open_rfp",
   "budget_approved",
   "board_discussion",
   "no_vendor_in_place",
