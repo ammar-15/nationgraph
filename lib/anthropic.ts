@@ -51,22 +51,31 @@ export type SubmitTool = {
   schema: Record<string, unknown>;
 };
 
-function webTools(opts: RunOpts) {
+/** Stop offering web tools past this prompt size, leaving room to finish the turn. */
+const PROMPT_TOKEN_BUDGET = 600_000;
+
+/** Rough prompt size. Search and fetch results are JSON text, so ~3.5 chars per token. */
+function estimateTokens(system: string, messages: Anthropic.Messages.MessageParam[]) {
+  return Math.ceil((system.length + JSON.stringify(messages).length) / 3.5);
+}
+
+/** Web tools for one request, sized to what is left of the run's budget. `max_uses` must be > 0. */
+function webTools(opts: RunOpts, searchLeft: number, fetchLeft: number) {
   const tools: unknown[] = [];
-  if (opts.webSearchUses) {
+  if (searchLeft > 0) {
     tools.push({
       type: "web_search_20250305",
       name: "web_search",
-      max_uses: opts.webSearchUses,
+      max_uses: searchLeft,
       ...(opts.blockedDomains?.length ? { blocked_domains: opts.blockedDomains } : {}),
       user_location: { type: "approximate", country: "US" },
     });
   }
-  if (opts.webFetchUses) {
+  if (fetchLeft > 0) {
     tools.push({
       type: "web_fetch_20250910",
       name: "web_fetch",
-      max_uses: opts.webFetchUses,
+      max_uses: fetchLeft,
       max_content_tokens: 12000,
       ...(opts.blockedDomains?.length ? { blocked_domains: opts.blockedDomains } : {}),
     });
@@ -83,13 +92,19 @@ function webTools(opts: RunOpts) {
  */
 export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise<{ data?: unknown; text: string }> {
   const client = researchClient();
-  const tools = webTools(opts);
-  if (opts.submit) {
-    tools.push({ name: opts.submit.name, description: opts.submit.description, input_schema: opts.submit.schema });
-  }
   const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: opts.prompt }];
+  // `max_uses` is per request, so a paused turn resumed with the same tools would get a
+  // fresh budget every time while all earlier results stay in the prompt — that overflowed
+  // the context window. Spend one pool across the whole run instead.
+  let searchLeft = opts.webSearchUses ?? 0;
+  let fetchLeft = opts.webFetchUses ?? 0;
   let text = "";
   for (let i = 0; i < 5; i++) {
+    const roomToSearch = estimateTokens(opts.system, messages) < PROMPT_TOKEN_BUDGET;
+    const tools = roomToSearch ? webTools(opts, searchLeft, fetchLeft) : [];
+    if (opts.submit) {
+      tools.push({ name: opts.submit.name, description: opts.submit.description, input_schema: opts.submit.schema });
+    }
     const res = await client.messages.create({
       model: opts.model || SCOUT_MODEL,
       max_tokens: opts.maxTokens || 12000,
@@ -103,6 +118,10 @@ export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise
     );
     if (call) return { data: call.input, text };
     if (res.stop_reason !== "pause_turn") break;
+    // Charge this turn's searches and fetches against the run's budget. Once a budget hits
+    // zero the tool is dropped; leaving its past results in the history is fine.
+    searchLeft -= res.usage.server_tool_use?.web_search_requests ?? 0;
+    fetchLeft -= res.usage.server_tool_use?.web_fetch_requests ?? 0;
     // Send the paused assistant turn back unchanged to let it continue.
     messages.push({ role: "assistant", content: res.content as Anthropic.Messages.ContentBlockParam[] });
   }
