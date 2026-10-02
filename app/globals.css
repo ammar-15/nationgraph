@@ -89,3 +89,6 @@ label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; colo
 .chat form { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
 .chat input { flex: 1; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
 footer.foot { color: var(--muted); font-size: 12.5px; padding: 30px 0 90px; border-top: 1px solid var(--line); margin-top: 30px; }
+.title-link { color: var(--ink); text-decoration: none; }
+.title-link:hover { color: var(--accent); text-decoration: underline; }
+a.btn { text-decoration: none; display: inline-block; }

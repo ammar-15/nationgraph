@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 
 export const SCOUT_MODEL = process.env.SCOUT_MODEL || "claude-sonnet-5-5";
 export const CHAT_MODEL = process.env.CHAT_MODEL || "claude-haiku-4-5-20251001";
@@ -43,12 +44,14 @@ type RunOpts = {
   blockedDomains?: string[];
 };
 
-/**
- * Runs one research turn with Claude's server-side web tools,
- * continuing through `pause_turn` so long searches finish.
- */
-export async function runResearch(opts: RunOpts): Promise<string> {
-  const client = researchClient();
+export type SubmitTool = {
+  name: string;
+  description: string;
+  /** JSON Schema for the tool input. Zod still validates afterwards. */
+  schema: Record<string, unknown>;
+};
+
+function webTools(opts: RunOpts) {
   const tools: unknown[] = [];
   if (opts.webSearchUses) {
     tools.push({
@@ -68,26 +71,60 @@ export async function runResearch(opts: RunOpts): Promise<string> {
       ...(opts.blockedDomains?.length ? { blocked_domains: opts.blockedDomains } : {}),
     });
   }
+  return tools;
+}
+
+/**
+ * Runs an agent turn with Claude's server-side web tools, continuing through
+ * `pause_turn`. When `submit` is given, the model returns its result by calling
+ * that tool, so the output is always valid JSON (no hand-written JSON to break).
+ */
+export async function runAgent(opts: RunOpts & { submit?: SubmitTool }): Promise<{ data?: unknown; text: string }> {
+  const client = researchClient();
+  const tools = webTools(opts);
+  if (opts.submit) {
+    tools.push({ name: opts.submit.name, description: opts.submit.description, input_schema: opts.submit.schema });
+  }
+  // With no web tools we can force the submit tool; with web tools the model must search first.
+  const toolChoice =
+    opts.submit && tools.length === 1 ? { type: "tool" as const, name: opts.submit.name } : undefined;
 
   const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: opts.prompt }];
-  let out = "";
-  for (let i = 0; i < 4; i++) {
+  let text = "";
+  for (let i = 0; i < 5; i++) {
     const res = await client.messages.create({
       model: opts.model || SCOUT_MODEL,
       max_tokens: opts.maxTokens || 12000,
       system: opts.system,
       messages,
       ...(tools.length ? { tools: tools as Anthropic.Messages.ToolUnion[] } : {}),
+      ...(toolChoice ? { tool_choice: toolChoice } : {}),
     });
-    out += textOf(res.content);
+    text += textOf(res.content);
+    const call = res.content.find(
+      (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use" && b.name === opts.submit?.name,
+    );
+    if (call) return { data: call.input, text };
     if (res.stop_reason !== "pause_turn") break;
     // Send the paused assistant turn back unchanged to let it continue.
     messages.push({ role: "assistant", content: res.content as Anthropic.Messages.ContentBlockParam[] });
   }
-  return out;
+  return { text };
 }
 
-/** Pull the JSON object out of a model reply (tagged, fenced, or bare). */
+/** Plain-text research turn (kept for simple calls). */
+export async function runResearch(opts: RunOpts): Promise<string> {
+  return (await runAgent(opts)).text;
+}
+
+/** Structured result: submit-tool input when called, otherwise JSON recovered from the text. */
+export async function runStructured(opts: RunOpts & { submit: SubmitTool }, tag?: string): Promise<unknown> {
+  const r = await runAgent(opts);
+  if (r.data !== undefined) return r.data;
+  return extractJson(r.text, tag);
+}
+
+/** Pull the JSON object out of a model reply (tagged, fenced, or bare), repairing minor syntax errors. */
 export function extractJson(text: string, tag?: string): unknown {
   let body = text;
   if (tag) {
@@ -98,6 +135,11 @@ export function extractJson(text: string, tag?: string): unknown {
   if (fenced) body = fenced[1];
   const start = body.indexOf("{");
   const end = body.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new Error("Model did not return JSON");
-  return JSON.parse(body.slice(start, end + 1));
+  if (start === -1 || end <= start) throw new Error("The model did not return structured data. Try again.");
+  const raw = body.slice(start, end + 1);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(jsonrepair(raw));
+  }
 }

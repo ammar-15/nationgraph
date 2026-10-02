@@ -75,7 +75,9 @@ function SignalCard({ s }: { s: Signal }) {
         <SourceBadge ok={s.sourceVerified} />
         <span className="pill plain">{Math.round(s.confidence * 100)}% conf.</span>
       </div>
-      <h3>{s.title}</h3>
+      <h3>
+        <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="title-link">{s.title} ↗</a>
+      </h3>
       <div className="meta">
         {s.agency}
         {s.state ? `, ${s.state}` : ""}
@@ -86,7 +88,12 @@ function SignalCard({ s }: { s: Signal }) {
       <div className="row meta">
         {s.timeline && <span>⏱ {s.timeline}</span>}
         {s.estimatedValue && <span>💲 {s.estimatedValue}</span>}
-        <a href={s.sourceUrl} target="_blank" rel="noreferrer">{s.sourceName || "Source"}</a>
+      </div>
+      <div className="row">
+        <a className="btn ghost sm" href={s.sourceUrl} target="_blank" rel="noreferrer">
+          {s.signalType === "open_rfp" || s.signalType === "upcoming_rfp" ? "Open RFP" : "Open source"} ↗
+        </a>
+        <span className="meta">{s.sourceName || s.sourceUrl.replace(/^https?:\/\//, "").split("/")[0]}</span>
       </div>
       <Contacts list={s.contacts} />
     </div>
@@ -105,9 +112,14 @@ function VendorCard({ v }: { v: Vendor }) {
       </h3>
       <div className="meta">{v.category}</div>
       <p>{v.summary}</p>
+      {v.sledIntent && <p><b>SLED intent:</b> {v.sledIntent}</p>}
       {v.knownGovCustomers.length > 0 && <p><b>Public gov customers:</b> {v.knownGovCustomers.join(", ")}</p>}
       {v.painPoints.length > 0 && <p><b>GTM pain:</b> {v.painPoints.join(" · ")}</p>}
       <p><b>Why NationGraph:</b> {v.whyNationGraph}</p>
+      <div className="row">
+        <a className="btn ghost sm" href={v.website} target="_blank" rel="noreferrer">Website ↗</a>
+        <a className="btn ghost sm" href={v.sourceUrl} target="_blank" rel="noreferrer">Evidence ↗</a>
+      </div>
       <Contacts list={v.contacts} />
     </div>
   );
@@ -310,6 +322,7 @@ export default function Home() {
   const [report, setReport] = useState<Report | null>(null);
   const [tab, setTab] = useState<Tab>("matches");
   const [building, setBuilding] = useState<string | null>(null);
+  const [buildError, setBuildError] = useState<{ key: string; msg: string } | null>(null);
   const [campaign, setCampaign] = useState<{ assets: Assets; vendor: Vendor; signal: Signal } | null>(null);
 
   useEffect(() => {
@@ -366,19 +379,19 @@ export default function Home() {
   async function build(vendor: Vendor, signal: Signal) {
     const key = `${vendor.id}-${signal.id}`;
     setBuilding(key);
-    setError(null);
+    setBuildError(null);
     try {
       const res = await fetch("/api/assets", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-access-code": code },
         body: JSON.stringify({ vendor, signal, niche: report?.niche }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
+      if (!res.ok) throw new Error(data.error || "Campaign build failed");
       setCampaign({ assets: data.assets, vendor, signal });
       setTimeout(() => document.getElementById("campaign")?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e) {
-      setError((e as Error).message);
+      setBuildError({ key, msg: `Campaign build failed: ${(e as Error).message}` });
     } finally {
       setBuilding(null);
     }
@@ -472,13 +485,14 @@ export default function Home() {
                       <div className="match">
                         <div className="side">
                           <div className="lbl">Vendor · NationGraph prospect</div>
-                          <b>{v.name}</b>
+                          <a href={v.website} target="_blank" rel="noreferrer" className="title-link"><b>{v.name} ↗</b></a>
                           <div className="meta">{v.category}</div>
+                          {v.sledIntent && <div className="meta">{v.sledIntent}</div>}
                         </div>
                         <div className="score">{m.score}</div>
                         <div className="side">
                           <div className="lbl">{SIGNAL_LABEL[s.signalType]} · {s.agency}</div>
-                          <b>{s.title}</b>
+                          <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="title-link"><b>{s.title} ↗</b></a>
                           <div className="meta">{s.timeline ?? "timeline unknown"}</div>
                         </div>
                       </div>
@@ -487,8 +501,13 @@ export default function Home() {
                         <button className="btn sm" onClick={() => build(v, s)} disabled={building !== null}>
                           {building === key ? "Building campaign…" : "Build campaign"}
                         </button>
+                        <a className="btn ghost sm" href={s.sourceUrl} target="_blank" rel="noreferrer">
+                          {s.signalType === "open_rfp" || s.signalType === "upcoming_rfp" ? "Open RFP" : "Open source"} ↗
+                        </a>
+                        <a className="btn ghost sm" href={v.website} target="_blank" rel="noreferrer">Vendor site ↗</a>
                         <SourceBadge ok={s.sourceVerified} />
                       </div>
+                      {buildError?.key === key && <div className="err">{buildError.msg}</div>}
                     </div>
                   );
                 })}

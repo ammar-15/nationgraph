@@ -1,4 +1,4 @@
-import { extractJson, runResearch } from "./anthropic";
+import { runStructured, type SubmitTool } from "./anthropic";
 import { scrubClaims } from "./guardrails";
 import { AssetsSchema, type Assets, type Signal, type Vendor } from "./types";
 
@@ -10,7 +10,68 @@ Rules:
 - Emails are drafts a human will review and send. Keep them short (under 140 words), one clear ask, an easy opt-out line.
 - The offer is: one hand-researched, ready-to-pitch agency lead plus 5 free signals in their territory.
 - Ad copy must respect platform norms (Google headline <= 30 chars per line is ideal, LinkedIn body <= 2 short sentences).
-- Output only the requested JSON inside the requested tags.`;
+- Return everything by calling submit_campaign.`;
+
+const str = { type: "string" };
+const strArr = { type: "array", items: str };
+const emailJson = { type: "object", properties: { subject: str, body: str }, required: ["subject", "body"] };
+const SUBMIT_CAMPAIGN: SubmitTool = {
+  name: "submit_campaign",
+  description: "Submit the finished campaign assets.",
+  schema: {
+    type: "object",
+    properties: {
+      vendorBrief: {
+        type: "object",
+        properties: { summary: str, sledReadiness: str, painPoints: strArr, whyNationGraph: str, talkingPoints: strArr },
+        required: ["summary", "sledReadiness", "painPoints", "whyNationGraph", "talkingPoints"],
+      },
+      agencyBrief: {
+        type: "object",
+        properties: { summary: str, need: str, timeline: str, buyingStage: str, risks: strArr },
+        required: ["summary", "need", "timeline", "buyingStage", "risks"],
+      },
+      ads: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { channel: { type: "string", enum: ["LinkedIn", "Google Search", "Meta", "X"] }, headline: str, body: str, cta: str },
+          required: ["channel", "headline", "body", "cta"],
+        },
+      },
+      landingPage: {
+        type: "object",
+        properties: {
+          eyebrow: str,
+          headline: str,
+          subhead: str,
+          painPoints: { type: "array", items: { type: "object", properties: { title: str, body: str }, required: ["title", "body"] } },
+          previewSignal: {
+            type: "object",
+            properties: { agency: str, title: str, why: str, timeline: str },
+            required: ["agency", "title", "why", "timeline"],
+          },
+          offer: str,
+          ctaLabel: str,
+          proof: strArr,
+          faq: { type: "array", items: { type: "object", properties: { q: str, a: str }, required: ["q", "a"] } },
+        },
+        required: ["eyebrow", "headline", "subhead", "painPoints", "previewSignal", "offer", "ctaLabel", "proof", "faq"],
+      },
+      emails: {
+        type: "object",
+        properties: { toVendor: emailJson, vendorToAgency: emailJson, followUp: emailJson },
+        required: ["toVendor", "vendorToAgency", "followUp"],
+      },
+      experiment: {
+        type: "object",
+        properties: { hypothesis: str, variantA: str, variantB: str, primaryMetric: str },
+        required: ["hypothesis", "variantA", "variantB", "primaryMetric"],
+      },
+    },
+    required: ["vendorBrief", "agencyBrief", "ads", "landingPage", "emails", "experiment"],
+  },
+};
 
 export async function generateAssets(vendor: Vendor, signal: Signal, niche: string): Promise<Assets> {
   const vendorContact = vendor.contacts[0];
@@ -46,17 +107,15 @@ Write:
 4. Emails: toVendor (from a NationGraph rep, opens with the specific agency lead), vendorToAgency (a draft the vendor could send the agency, referencing the public need respectfully), followUp (to the vendor, 4 days later, introduces Compass, NationGraph's AI agent that researches accounts and drafts outreach).
 5. One A/B experiment for the landing page.
 
-<assets>
-{"vendorBrief": {"summary": string, "sledReadiness": string, "painPoints": string[], "whyNationGraph": string, "talkingPoints": string[]},
- "agencyBrief": {"summary": string, "need": string, "timeline": string, "buyingStage": string, "risks": string[]},
- "ads": [{"channel": "LinkedIn"|"Google Search"|"Meta", "headline": string, "body": string, "cta": string}],
- "landingPage": {"eyebrow": string, "headline": string, "subhead": string, "painPoints": [{"title": string, "body": string}], "previewSignal": {"agency": string, "title": string, "why": string, "timeline": string}, "offer": string, "ctaLabel": string, "proof": string[], "faq": [{"q": string, "a": string}]},
- "emails": {"toVendor": {"subject": string, "body": string}, "vendorToAgency": {"subject": string, "body": string}, "followUp": {"subject": string, "body": string}},
- "experiment": {"hypothesis": string, "variantA": string, "variantB": string, "primaryMetric": string}}
-</assets>`;
+Call submit_campaign with all of it.`;
 
-  const text = await runResearch({ system: SYSTEM, prompt, maxTokens: 6000 });
-  const parsed = AssetsSchema.parse(extractJson(text, "assets"));
+  const data = await runStructured({ system: SYSTEM, prompt, maxTokens: 8000, submit: SUBMIT_CAMPAIGN }, "assets");
+  const result = AssetsSchema.safeParse(data);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    throw new Error(`Campaign came back incomplete (${issue.path.join(".")}: ${issue.message}). Try again.`);
+  }
+  const parsed = result.data;
   // Final guardrail pass over everything a prospect will read.
   return JSON.parse(scrubClaims(JSON.stringify(parsed))) as Assets;
 }

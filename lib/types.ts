@@ -19,12 +19,18 @@ function lenientArray<T extends z.ZodTypeAny>(item: T, max: number) {
         .slice(0, max),
     );
 }
-const shortText = (max: number) => z.string().trim().min(1).max(max);
+/** Required text; overlong model output is trimmed rather than rejected. */
+const shortText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .transform((v) => (v.length > max ? v.slice(0, max - 1).trimEnd() + "…" : v));
 const optText = (max: number) =>
   z
     .string()
     .trim()
-    .max(max)
+    .transform((v) => v.slice(0, max))
     .nullish()
     .transform((v) => (v ? v : null));
 
@@ -78,7 +84,8 @@ export const VendorSchema = z.object({
   website: url,
   category: shortText(160),
   summary: shortText(600),
-  sledFocus: z.enum(["core", "partial", "emerging"]),
+  sledFocus: z.enum(["core", "partial", "emerging"]).catch("partial"),
+  sledIntent: optText(400),
   knownGovCustomers: lenientArray(shortText(160), 8),
   painPoints: lenientArray(shortText(240), 6),
   whyNationGraph: shortText(500),
@@ -112,33 +119,33 @@ export const AssetsSchema = z.object({
   vendorBrief: z.object({
     summary: shortText(800),
     sledReadiness: shortText(400),
-    painPoints: z.array(shortText(240)).max(6),
+    painPoints: z.array(shortText(240)).transform((x) => x.slice(0, 6)),
     whyNationGraph: shortText(500),
-    talkingPoints: z.array(shortText(240)).max(6),
+    talkingPoints: z.array(shortText(240)).transform((x) => x.slice(0, 6)),
   }),
   agencyBrief: z.object({
     summary: shortText(800),
     need: shortText(400),
     timeline: shortText(240),
     buyingStage: shortText(160),
-    risks: z.array(shortText(240)).max(5),
+    risks: z.array(shortText(240)).transform((x) => x.slice(0, 5)),
   }),
   ads: z
     .array(
       z.object({
-        channel: z.enum(["LinkedIn", "Google Search", "Meta", "X"]),
+        channel: z.enum(["LinkedIn", "Google Search", "Meta", "X"]).catch("LinkedIn"),
         headline: shortText(120),
         body: shortText(400),
         cta: shortText(40),
       }),
     )
     .min(1)
-    .max(4),
+    .transform((x) => x.slice(0, 4)),
   landingPage: z.object({
     eyebrow: shortText(80),
     headline: shortText(140),
     subhead: shortText(300),
-    painPoints: z.array(z.object({ title: shortText(80), body: shortText(260) })).min(2).max(4),
+    painPoints: z.array(z.object({ title: shortText(80), body: shortText(260) })).min(1).transform((x) => x.slice(0, 4)),
     previewSignal: z.object({
       agency: shortText(200),
       title: shortText(240),
@@ -147,8 +154,8 @@ export const AssetsSchema = z.object({
     }),
     offer: shortText(260),
     ctaLabel: shortText(40),
-    proof: z.array(shortText(160)).max(4),
-    faq: z.array(z.object({ q: shortText(160), a: shortText(400) })).max(4),
+    proof: z.array(shortText(160)).transform((x) => x.slice(0, 4)),
+    faq: z.array(z.object({ q: shortText(160), a: shortText(400) })).transform((x) => x.slice(0, 4)),
   }),
   emails: z.object({
     toVendor: z.object({ subject: shortText(120), body: shortText(1600) }),
