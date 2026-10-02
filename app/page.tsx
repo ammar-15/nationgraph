@@ -72,6 +72,9 @@ function SignalCard({ s }: { s: Signal }) {
       <div className="row">
         <span className="pill amber">{SIGNAL_LABEL[s.signalType] ?? s.signalType}</span>
         <SourceBadge ok={s.sourceVerified} />
+        {s.sourceKind === "primary" && <span className="pill">Government document</span>}
+        {s.evidenceVerified === true && <span className="pill">Quote found on page</span>}
+        {s.evidenceVerified === false && <span className="pill red">Quote not found</span>}
         <span className="pill plain">{Math.round(s.confidence * 100)}% conf.</span>
       </div>
       <h3>
@@ -83,6 +86,7 @@ function SignalCard({ s }: { s: Signal }) {
         {s.agencyType ? ` · ${s.agencyType}` : ""}
       </div>
       <p>{s.summary}</p>
+      {s.evidence && <p style={{ fontStyle: "italic" }}>“{s.evidence}”</p>}
       <p><b>Need:</b> {s.painPoint}</p>
       <div className="row meta">
         {s.timeline && <span>⏱ {s.timeline}</span>}
@@ -203,15 +207,16 @@ function Campaign({ assets, vendor, signal, niche }: { assets: Assets; vendor: V
         </div>
       </div>
 
-      <h4>Ads</h4>
+      <h4>NationGraph ads · aimed at vendors like {vendor.name}</h4>
       <div className="grid">
         {assets.ads.map((a, i) => (
           <div className="box" key={i}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="pill plain">{a.channel}</span>
-              <Copy text={`${a.headline}\n${a.body}\nCTA: ${a.cta}`} />
+              <Copy text={`Audience: ${a.audience}\n${a.headline}\n${a.body}\nCTA: ${a.cta}`} />
             </div>
-            <b style={{ display: "block", marginTop: 8 }}>{a.headline}</b>
+            <div className="meta" style={{ marginTop: 6 }}>Targets: {a.audience}</div>
+            <b style={{ display: "block", marginTop: 6 }}>{a.headline}</b>
             <p className="meta" style={{ margin: "4px 0" }}>{a.body}</p>
             <span className="pill">{a.cta}</span>
           </div>

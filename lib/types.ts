@@ -74,6 +74,9 @@ export const SignalSchema = z.object({
   confidence: conf,
   contacts: lenientArray(ContactSchema, 5),
   sourceVerified: z.boolean().optional(),
+  // set by code, never by the model
+  sourceKind: z.enum(["primary", "secondary"]).optional(),
+  evidenceVerified: z.boolean().optional(),
 });
 export type Signal = z.infer<typeof SignalSchema>;
 
@@ -133,6 +136,7 @@ export const AssetsSchema = z.object({
     .array(
       z.object({
         channel: z.enum(["LinkedIn", "Google Search", "Meta", "X"]).catch("LinkedIn"),
+        audience: shortText(160).catch("Sales leaders at companies selling to government"),
         headline: shortText(120),
         body: shortText(400),
         cta: shortText(40),

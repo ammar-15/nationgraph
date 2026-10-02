@@ -56,8 +56,8 @@ const SUBMIT_SIGNALS: SubmitTool = {
             estimatedValue: str("Dollar value if public"),
             timeline: str("Deadline, renewal date or next meeting"),
             sourceName: str("Publisher or portal name"),
-            sourceUrl: str("Direct URL to the minutes, agenda, budget document, article or post. Never a solicitation or bid page"),
-            evidence: str("Short paraphrase of the key line"),
+            sourceUrl: str("Direct URL to the government's own agenda, minutes, budget, plan or board packet. Never a news article, solicitation or bid page"),
+            evidence: str("Verbatim quote under 25 words copied from the source page"),
             confidence: num("0 to 1"),
             contacts: { type: "array", items: CONTACT_JSON },
           },
@@ -143,6 +143,35 @@ const SOLICITATION_TEXT = /(request for (proposals?|qualifications?|quotes?|bids
 const isPublishedSolicitation = (s: Signal) =>
   SOLICITATION_HOSTS.test(s.sourceUrl) || SOLICITATION_TEXT.test(`${s.title} ${s.summary} ${s.timeline ?? ""} ${s.evidence ?? ""}`);
 
+/** Government-owned domains and the meeting platforms agencies publish agendas on. */
+const PRIMARY_HOSTS = /(\.gov(\.[a-z]{2})?$|\.gov\/|\.us$|\.k12\.|\.edu$|\.ca\.gov|legistar\.com|boarddocs\.com|granicus\.com|simbli\.eboardsolutions\.com|eboardsolutions\.com|civicclerk\.com|primegov\.com|novusagenda\.com|escribemeetings\.com|iqm2\.com|municode\.com|civicplus\.com|swagit\.com|diligent\.community|govdelivery\.com)/i;
+const hostOf = (u: string) => {
+  try {
+    return new URL(u).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+};
+const isPrimarySource = (u: string) => PRIMARY_HOSTS.test(hostOf(u)) || /\/(agendas?|minutes|boarddocs|board-?packet|budget)\b/i.test(u);
+
+const words = (t: string) => t.toLowerCase().replace(/<[^>]*>/g, " ").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+
+/** True when most of the quoted words appear, in order, on the fetched page. Null when the page can't be read as text (PDF, JS app). */
+async function quoteOnPage(url: string, quote: string | null | undefined): Promise<boolean | null> {
+  if (!quote || /\.pdf($|\?)/i.test(url)) return null;
+  const page = await fetchPageText(url);
+  if (!page) return null;
+  const hay = words(page).join(" ");
+  if (hay.length < 200) return null;
+  const q = words(quote);
+  if (q.length < 4) return null;
+  // sliding window of 5 consecutive quote words must appear verbatim
+  let hits = 0;
+  const total = Math.max(1, q.length - 4);
+  for (let i = 0; i + 5 <= q.length; i++) if (hay.includes(q.slice(i, i + 5).join(" "))) hits++;
+  return hits / total >= 0.5;
+}
+
 const CONTACT_SHAPE = `{"name": string|null, "role": string, "organization": string|null, "publicEmail": string|null, "publicPhone": string|null, "linkedinUrl": string|null, "sourceUrl": string}`;
 
 function signalsPrompt(niche: Niche, region: string, records: GovRecord[]) {
@@ -157,6 +186,9 @@ PRE-RFP ONLY. The value is seeing a deal 3 to 18 months before any solicitation 
 - Do NOT return published or open RFPs, RFQs, IFBs, bids or solicitations, and do NOT cite pages on procurement portals or bid boards (BidNet, DemandStar, Bonfire, OpenGov Procurement, Periscope, PublicPurchase, MERX, state eProcurement or "bids and RFPs" pages). By then the deal is mostly decided.
 - A signal is good when the agency has only discussed, funded, studied or planned something, or a contract is nearing its end, and no solicitation has been published yet.
 - If you cannot tell whether a solicitation is already out, leave the signal out.
+
+PRIMARY DOCUMENTS ONLY. Every signal's sourceUrl must be the government's own document: a board or council agenda, minutes, board packet, budget book or budget workshop item, capital improvement plan, technology or strategic plan, consent-agenda contract renewal, bond or grant document. Host it on the agency's own domain (.gov, .us, .k12.*.us, .edu, the district or city site) or its meeting platform (Legistar, BoardDocs, Granicus, Simbli, CivicClerk, PrimeGov, NovusAGENDA, eScribe, IQM2, Municode). Do NOT use news articles, blogs, trade press, aggregators or press releases as sourceUrl. Use news only to find leads, then open the underlying agenda or minutes and cite that. If you cannot find the primary document, leave the signal out.
+Put a short VERBATIM quote (under 25 words) copied from the source into "evidence" so it can be checked against the page.
 
 Niche: ${niche.label}
 Buyers: ${niche.buyers}
@@ -177,10 +209,10 @@ Search ideas: ${niche.searchHints.join(" | ")}
 City council records pulled from the Legistar API today (use any that fit, cite their URL):
 ${recs}
 
-Return 6 to 10 of the strongest, most specific signals. sourceUrl must be the most direct link (the minutes or agenda PDF, budget document, article or post), never a solicitation page or portal homepage. Use web_fetch to confirm details on the most promising pages.
+Return 8 to 12 of the strongest, most specific signals. sourceUrl must be the most direct link (the minutes or agenda PDF, budget document, article or post), never a solicitation page or portal homepage. Use web_fetch to confirm details on the most promising pages.
 
 When finished, call submit_signals with this shape:
-{"signals": [{"id": "s1", "agency": string, "agencyType": string|null, "state": string|null, "signalType": one of the types above, "title": string, "summary": string (2-3 sentences, what happened), "painPoint": string (the problem the agency is trying to solve), "estimatedValue": string|null, "timeline": string|null (renewal date, budget vote or next meeting, never a bid deadline), "sourceName": string|null, "sourceUrl": string, "evidence": string|null (short paraphrase of the key line, under 30 words), "confidence": number 0-1, "contacts": [${CONTACT_SHAPE}] (0-3 decision-makers at the agency)}]}`;
+{"signals": [{"id": "s1", "agency": string, "agencyType": string|null, "state": string|null, "signalType": one of the types above, "title": string, "summary": string (2-3 sentences, what happened), "painPoint": string (the problem the agency is trying to solve), "estimatedValue": string|null, "timeline": string|null (renewal date, budget vote or next meeting, never a bid deadline), "sourceName": string|null, "sourceUrl": string, "evidence": string (verbatim quote from the source, under 25 words), "confidence": number 0-1, "contacts": [${CONTACT_SHAPE}] (0-3 decision-makers at the agency)}]}`;
 }
 
 function vendorsPrompt(niche: Niche, region: string) {
@@ -282,7 +314,7 @@ export async function runScout(niche: Niche, region: string, progress: Progress 
   progress("research", "Research agents searching portals, board docs, news and social posts");
   const [sigRes, venRes] = await Promise.allSettled([
     runStructured(
-      { system: GUARDRAILS, prompt: signalsPrompt(niche, region, records), webSearchUses: 8, webFetchUses: 5, submit: SUBMIT_SIGNALS },
+      { system: GUARDRAILS, prompt: signalsPrompt(niche, region, records), webSearchUses: 12, webFetchUses: 8, submit: SUBMIT_SIGNALS },
       "signals",
     ),
     runStructured(
@@ -299,6 +331,12 @@ export async function runScout(niche: Niche, region: string, progress: Progress 
       const before = signals.length;
       signals = signals.filter((x) => !isPublishedSolicitation(x));
       if (signals.length < before) warnings.push(`Removed ${before - signals.length} signal(s) that were already published RFPs, so only pre-RFP signals remain.`);
+      // Keep only the government's own documents. Social posts asking for contractors are the one exception.
+      const beforeKind = signals.length;
+      signals = signals
+        .map((x) => ({ ...x, sourceKind: isPrimarySource(x.sourceUrl) ? ("primary" as const) : ("secondary" as const) }))
+        .filter((x) => x.sourceKind === "primary" || x.signalType === "call_for_contractors");
+      if (signals.length < beforeKind) warnings.push(`Removed ${beforeKind - signals.length} signal(s) sourced from news or other secondhand pages. Only government documents (agendas, minutes, budgets, plans) are kept.`);
     } catch (e) {
       warnings.push(`Could not parse signals: ${(e as Error).message}`);
     }
@@ -317,12 +355,16 @@ export async function runScout(niche: Niche, region: string, progress: Progress 
   signals = dedupe(signals, "s", (s) => s.title);
   vendors = dedupe(vendors, "v", (v) => v.name);
 
-  progress("verify", "Checking every source URL and stripping unverifiable contact details");
+  progress("verify", "Checking every source URL, matching quotes to the page, and stripping unverifiable contact details");
   [signals, vendors] = await Promise.all([verifySources(signals), verifySources(vendors)]);
+  signals = await pool(signals, 5, async (x) => ({ ...x, evidenceVerified: (await quoteOnPage(x.sourceUrl, x.evidence)) ?? undefined }));
+  const mismatched = signals.filter((x) => x.evidenceVerified === false).length;
+  if (mismatched) warnings.push(`${mismatched} signal(s) have a quote that was not found on the cited page. They are flagged, check them before outreach.`);
   const dead = [...signals, ...vendors].filter((x) => !x.sourceVerified).length;
   if (dead) warnings.push(`${dead} item(s) cite a source that could not be reached. They are flagged, review before outreach.`);
 
-  signals.sort((a, b) => Number(b.sourceVerified) - Number(a.sourceVerified) || b.confidence - a.confidence);
+  const trust = (s: Signal) => (s.evidenceVerified === true ? 2 : s.evidenceVerified === false ? 0 : 1);
+  signals.sort((a, b) => Number(b.sourceVerified) - Number(a.sourceVerified) || trust(b) - trust(a) || b.confidence - a.confidence);
   vendors.sort((a, b) => Number(b.sourceVerified) - Number(a.sourceVerified) || b.confidence - a.confidence);
 
   progress("match", "Matching signals to vendors");

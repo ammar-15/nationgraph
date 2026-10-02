@@ -35,8 +35,8 @@ const SUBMIT_CAMPAIGN: SubmitTool = {
         type: "array",
         items: {
           type: "object",
-          properties: { channel: { type: "string", enum: ["LinkedIn", "Google Search", "Meta", "X"] }, headline: str, body: str, cta: str },
-          required: ["channel", "headline", "body", "cta"],
+          properties: { channel: { type: "string", enum: ["LinkedIn", "Google Search", "Meta", "X"] }, audience: str, headline: str, body: str, cta: str },
+          required: ["channel", "audience", "headline", "body", "cta"],
         },
       },
       landingPage: {
@@ -102,7 +102,11 @@ Niche: ${niche}
 
 Write:
 1. vendorBrief and agencyBrief for the NationGraph rep.
-2. 3 ads (LinkedIn, Google Search, Meta) aimed at companies like this vendor, built around the pain of finding deals before the RFP.
+2. 3 ads (LinkedIn, Google Search, Meta). These are NATIONGRAPH's ads, published by NationGraph to attract vendors like this one to NationGraph. The audience is the sales and growth leaders at companies like this vendor, not government agencies.
+   - Voice is NationGraph's ("we", "NationGraph"). Never write in the vendor's voice and never advertise the vendor's own product.
+   - Hook: seeing government deals months before the RFP, and getting a ready pre-RFP lead before you even sign up.
+   - A public ad must not name the agency or the vendor. Describe the lead generically (for example "a mid-size district in Texas replacing its student information system").
+   - Fill "audience" with who the ad targets (job titles and company type).
 3. A personalized landing page for this vendor: it shows a teaser of the agency lead and gates the full lead behind an email CTA.
 4. Emails: toVendor (from a NationGraph rep, opens with the specific agency lead), vendorToAgency (a draft the vendor could send the agency, referencing the public need respectfully), followUp (to the vendor, 4 days later, introduces Compass, NationGraph's AI agent that researches accounts and drafts outreach).
 5. One A/B experiment for the landing page.
